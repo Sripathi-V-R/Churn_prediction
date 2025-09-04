@@ -18,19 +18,16 @@ def load_model_and_preprocessor():
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
 
-    # Load preprocessor dict
+    # Load preprocessing pipeline/transformer
     with open(PREPROCESSOR_PATH, "rb") as f:
         preprocessor = pickle.load(f)
 
-    scaler = preprocessor.get("scaler")
-    encoder = preprocessor.get("encoder")
+    if not hasattr(preprocessor, "transform"):
+        raise ValueError("Preprocessing object must support .transform()")
 
-    if scaler is None or encoder is None:
-        raise ValueError("Scaler or encoder not found in preprocessing_tools.pkl")
+    return model, preprocessor
 
-    return model, scaler, encoder
-
-model, scaler, encoder = load_model_and_preprocessor()
+model, preprocessor = load_model_and_preprocessor()
 
 # ---------------------- FEATURES ----------------------
 categorical_cols = [
@@ -83,7 +80,6 @@ with st.form("customer_form"):
 
 # ---- Prediction ----
 if submitted:
-    # Build input DataFrame
     input_dict = {
         'gender': gender,
         'SeniorCitizen': SeniorCitizen,
@@ -109,22 +105,14 @@ if submitted:
     input_df = pd.DataFrame([input_dict])
 
     try:
-        # Transform numeric features
-        num_data = input_df[numeric_cols].values
-        scaled_num = scaler.transform(num_data)
-
-        # Transform categorical features
-        cat_data = input_df[categorical_cols].values
-        encoded_cat = encoder.transform(cat_data)
-
-        # Combine processed features
-        processed_input = np.hstack([scaled_num, encoded_cat])
+        # Transform using the pipeline / ColumnTransformer
+        processed_input = preprocessor.transform(input_df)
 
         # Predict
         prediction = model.predict(processed_input)[0]
         probability = model.predict_proba(processed_input)[0][1]
 
-        # Display
+        # Display results
         st.markdown("---")
         st.subheader("Prediction Result")
         if prediction == 1:
