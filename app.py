@@ -1,116 +1,47 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import pickle
-from pathlib import Path
 
-# ---------------------- CONFIG ----------------------
-BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"
-PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
-
-st.set_page_config(page_title="Telco Churn Prediction", layout="wide")
-
-# ---------------------- LOAD ARTIFACTS ----------------------
+# ---- Load Model ----
 @st.cache_resource
-def load_model_and_preprocessor():
-    with open(MODEL_PATH, "rb") as f:
+def load_model():
+    with open("model.pkl", "rb") as f:
         model = pickle.load(f)
-    with open(PREPROCESSOR_PATH, "rb") as f:
-        preprocessor = pickle.load(f)
-    return model, preprocessor
+    return model
 
-model, preprocessor = load_model_and_preprocessor()
+model = load_model()
 
-# ---------------------- FEATURES ----------------------
-categorical_cols = [
-    'gender', 'SeniorCitizen', 'Partner', 'Dependents', 'PhoneService',
-    'MultipleLines', 'InternetService', 'OnlineSecurity', 'OnlineBackup',
-    'DeviceProtection', 'TechSupport', 'StreamingTV', 'StreamingMovies',
-    'Contract', 'PaperlessBilling', 'PaymentMethod'
-]
+# ---- Streamlit UI ----
+st.set_page_config(page_title="Diabetes Prediction App", page_icon="🩺")
+st.title("🩺 Diabetes Prediction App")
 
-numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+st.write("""
+This app predicts whether a person is likely to have diabetes based on input health parameters.
+""")
 
-# ---------------------- APP LAYOUT ----------------------
-st.markdown("<h1 style='text-align:center;color:#1f77b4'>Telco Customer Churn Prediction</h1>", unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("Fill in the details of the customer below to predict churn probability.")
+# Input fields
+st.sidebar.header("Patient Information")
+pregnancies = st.sidebar.number_input("Pregnancies", min_value=0, max_value=20, value=0)
+glucose = st.sidebar.number_input("Glucose Level", min_value=0, max_value=300, value=120)
+blood_pressure = st.sidebar.number_input("Blood Pressure", min_value=0, max_value=200, value=70)
+skin_thickness = st.sidebar.number_input("Skin Thickness", min_value=0, max_value=100, value=20)
+insulin = st.sidebar.number_input("Insulin Level", min_value=0, max_value=900, value=80)
+bmi = st.sidebar.number_input("BMI", min_value=0.0, max_value=100.0, value=25.0, step=0.1)
+dpf = st.sidebar.number_input("Diabetes Pedigree Function", min_value=0.0, max_value=2.5, value=0.5, step=0.01)
+age = st.sidebar.number_input("Age", min_value=0, max_value=120, value=30)
 
-# ---- Input Form ----
-with st.form("customer_form"):
-    st.subheader("Customer Details")
-    col1, col2 = st.columns(2)
+# Prediction
+if st.button("Predict"):
+    input_data = pd.DataFrame([[pregnancies, glucose, blood_pressure, skin_thickness,
+                                insulin, bmi, dpf, age]],
+                              columns=['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
+                                       'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
+    
+    # Use model directly (CatBoost/XGBoost/RandomForest handle raw input)
+    prediction = model.predict(input_data)[0]
+    prediction_proba = model.predict_proba(input_data)[0][1]
 
-    with col1:
-        gender = st.selectbox("Gender", ['Female', 'Male'])
-        SeniorCitizen = st.selectbox("Senior Citizen", ['No', 'Yes'])
-        Partner = st.selectbox("Partner", ['Yes', 'No'])
-        Dependents = st.selectbox("Dependents", ['No', 'Yes'])
-        PhoneService = st.selectbox("Phone Service", ['No', 'Yes'])
-        MultipleLines = st.selectbox("Multiple Lines", ['No phone service', 'No', 'Yes'])
-        InternetService = st.selectbox("Internet Service", ['DSL', 'Fiber optic', 'No'])
-        OnlineSecurity = st.selectbox("Online Security", ['No', 'Yes', 'No internet service'])
-
-    with col2:
-        OnlineBackup = st.selectbox("Online Backup", ['Yes', 'No', 'No internet service'])
-        DeviceProtection = st.selectbox("Device Protection", ['No', 'Yes', 'No internet service'])
-        TechSupport = st.selectbox("Tech Support", ['No', 'Yes', 'No internet service'])
-        StreamingTV = st.selectbox("Streaming TV", ['No', 'Yes', 'No internet service'])
-        StreamingMovies = st.selectbox("Streaming Movies", ['No', 'Yes', 'No internet service'])
-        Contract = st.selectbox("Contract", ['Month-to-month', 'One year', 'Two year'])
-        PaperlessBilling = st.selectbox("Paperless Billing", ['Yes', 'No'])
-        PaymentMethod = st.selectbox(
-            "Payment Method", 
-            ['Electronic check', 'Mailed check', 'Bank transfer (automatic)', 'Credit card (automatic)']
-        )
-
-    tenure = st.number_input("Tenure (months)", min_value=0, max_value=100, value=12)
-    MonthlyCharges = st.number_input("Monthly Charges", min_value=0.0, max_value=1000.0, value=70.0)
-    TotalCharges = st.number_input("Total Charges", min_value=0.0, max_value=20000.0, value=800.0)
-
-    submitted = st.form_submit_button("Predict Churn")
-
-# ---- Prediction ----
-if submitted:
-    # Build input DataFrame
-    input_dict = {
-        'gender': gender,
-        'SeniorCitizen': SeniorCitizen,
-        'Partner': Partner,
-        'Dependents': Dependents,
-        'PhoneService': PhoneService,
-        'MultipleLines': MultipleLines,
-        'InternetService': InternetService,
-        'OnlineSecurity': OnlineSecurity,
-        'OnlineBackup': OnlineBackup,
-        'DeviceProtection': DeviceProtection,
-        'TechSupport': TechSupport,
-        'StreamingTV': StreamingTV,
-        'StreamingMovies': StreamingMovies,
-        'Contract': Contract,
-        'PaperlessBilling': PaperlessBilling,
-        'PaymentMethod': PaymentMethod,
-        'tenure': tenure,
-        'MonthlyCharges': MonthlyCharges,
-        'TotalCharges': TotalCharges
-    }
-
-    input_df = pd.DataFrame([input_dict])
-
-    try:
-        processed_input = preprocessor.transform(input_df)
-        prediction = model.predict(processed_input)[0]
-        probability = model.predict_proba(processed_input)[0][1]
-
-        st.markdown("---")
-        st.subheader("Prediction Result")
-        if prediction == 1:
-            st.error(f"⚠️ Customer is likely to **CHURN** with probability {probability:.2f}")
-        else:
-            st.success(f"✅ Customer is **NOT likely to churn** with probability {1-probability:.2f}")
-
-        st.markdown("**Submitted Data:**")
-        st.table(input_df)
-    except Exception as e:
-        st.error(f"Prediction failed: {e}")
+    if prediction == 1:
+        st.error(f"The model predicts: **Diabetic** (Risk: {prediction_proba*100:.2f}%)")
+    else:
+        st.success(f"The model predicts: **Not Diabetic** (Risk: {prediction_proba*100:.2f}%)")
