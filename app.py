@@ -14,13 +14,23 @@ st.set_page_config(page_title="Telco Churn Prediction", layout="wide")
 # ---------------------- LOAD ARTIFACTS ----------------------
 @st.cache_resource
 def load_model_and_preprocessor():
+    # Load CatBoost model
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
+
+    # Load preprocessor dict
     with open(PREPROCESSOR_PATH, "rb") as f:
         preprocessor = pickle.load(f)
-    return model, preprocessor
 
-model, preprocessor = load_model_and_preprocessor()
+    scaler = preprocessor.get("scaler")
+    encoder = preprocessor.get("encoder")
+
+    if scaler is None or encoder is None:
+        raise ValueError("Scaler or encoder not found in preprocessing_tools.pkl")
+
+    return model, scaler, encoder
+
+model, scaler, encoder = load_model_and_preprocessor()
 
 # ---------------------- FEATURES ----------------------
 categorical_cols = [
@@ -99,10 +109,22 @@ if submitted:
     input_df = pd.DataFrame([input_dict])
 
     try:
-        processed_input = preprocessor.transform(input_df)
+        # Transform numeric features
+        num_data = input_df[numeric_cols].values
+        scaled_num = scaler.transform(num_data)
+
+        # Transform categorical features
+        cat_data = input_df[categorical_cols].values
+        encoded_cat = encoder.transform(cat_data)
+
+        # Combine processed features
+        processed_input = np.hstack([scaled_num, encoded_cat])
+
+        # Predict
         prediction = model.predict(processed_input)[0]
         probability = model.predict_proba(processed_input)[0][1]
 
+        # Display
         st.markdown("---")
         st.subheader("Prediction Result")
         if prediction == 1:
@@ -112,5 +134,6 @@ if submitted:
 
         st.markdown("**Submitted Data:**")
         st.table(input_df)
+
     except Exception as e:
         st.error(f"Prediction failed: {e}")
