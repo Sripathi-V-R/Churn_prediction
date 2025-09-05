@@ -6,7 +6,7 @@ from pathlib import Path
 
 # ---------------- CONFIG ----------------
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"   # exact file name with (1)
+MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"   # exact file name
 PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
 DATA_PATH = BASE_DIR / "TelcoChurn_Preprocessed.csv"
 
@@ -16,23 +16,14 @@ PRIMARY_COLOR = "#2E86C1"
 # ---------------- LOAD ARTIFACTS ----------------
 @st.cache_resource
 def load_model_and_preprocessor():
-    """Load CatBoost model and preprocessing pipeline."""
+    """Load CatBoost model and preprocessing tools."""
     # ---- Load Model ----
-    try:
-        with open(MODEL_PATH, "rb") as f:
-            model = pickle.load(f)
-    except Exception as e:
-        raise RuntimeError(f"❌ Failed to load model at {MODEL_PATH}. Error: {e}")
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
 
     # ---- Load Preprocessor ----
-    try:
-        with open(PREPROCESSOR_PATH, "rb") as f:
-            preprocessor = pickle.load(f)
-    except Exception as e:
-        raise RuntimeError(f"❌ Failed to load preprocessor at {PREPROCESSOR_PATH}. Error: {e}")
-
-    if not hasattr(preprocessor, "transform"):
-        raise ValueError("Preprocessor object must support .transform()")
+    with open(PREPROCESSOR_PATH, "rb") as f:
+        preprocessor = pickle.load(f)
 
     return model, preprocessor
 
@@ -40,10 +31,34 @@ def load_model_and_preprocessor():
 @st.cache_data
 def load_raw_data():
     """Load dataset before encoding and scaling."""
-    try:
-        return pd.read_csv(DATA_PATH)
-    except Exception as e:
-        raise RuntimeError(f"❌ Failed to load dataset at {DATA_PATH}. Error: {e}")
+    return pd.read_csv(DATA_PATH)
+
+
+def apply_preprocessing(preprocessor, input_df):
+    """Apply preprocessing depending on how it was saved."""
+    # Case 1: it's a full pipeline
+    if hasattr(preprocessor, "transform"):
+        return preprocessor.transform(input_df)
+
+    # Case 2: it's a dict of objects
+    if isinstance(preprocessor, dict):
+        df = input_df.copy()
+
+        # If encoder exists
+        if "encoder" in preprocessor and hasattr(preprocessor["encoder"], "transform"):
+            df = pd.DataFrame(
+                preprocessor["encoder"].transform(df),
+                columns=preprocessor["encoder"].get_feature_names_out(),
+            )
+
+        # If scaler exists
+        if "scaler" in preprocessor and hasattr(preprocessor["scaler"], "transform"):
+            numeric_cols = preprocessor.get("numeric_cols", [])
+            df[numeric_cols] = preprocessor["scaler"].transform(df[numeric_cols])
+
+        return df
+
+    raise ValueError("❌ Preprocessor format not recognized")
 
 
 # ---------------- APP ----------------
@@ -97,8 +112,8 @@ def main():
             # Convert to DataFrame
             input_df = pd.DataFrame([input_data])
 
-            # Apply preprocessing
-            processed = preprocessor.transform(input_df)
+            # Apply preprocessing (handles both pipeline & dict)
+            processed = apply_preprocessing(preprocessor, input_df)
 
             # Prediction
             pred = model.predict(processed)[0]
