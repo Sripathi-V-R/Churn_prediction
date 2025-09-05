@@ -4,114 +4,121 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-# ---------------------- CONFIG ----------------------
+# ---------------- CONFIG ----------------
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"
+MODEL_PATH = BASE_DIR / "catboost_best_model(1).pkl"
 PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
 DATA_PATH = BASE_DIR / "TelcoChurn_Preprocessed.csv"
 
-st.set_page_config(page_title="Telco Churn Prediction", layout="wide")
+APP_TITLE = "📞 Telco Customer Churn Prediction"
+PRIMARY_COLOR = "#2E86C1"
 
-# ---------------------- LOAD ARTIFACTS ----------------------
+# ---------------- LOAD ARTIFACTS ----------------
 @st.cache_resource
 def load_model_and_preprocessor():
-    # Load CatBoost model
+    # Check files exist
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(f"❌ Model file not found at {MODEL_PATH}")
+    if not PREPROCESSOR_PATH.exists():
+        raise FileNotFoundError(f"❌ Preprocessor file not found at {PREPROCESSOR_PATH}")
+
+    # Load model
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
 
-    # Load preprocessing dictionary
+    # Load preprocessing tools (should be dict with scaler + encoder or a pipeline)
     with open(PREPROCESSOR_PATH, "rb") as f:
         preprocessor = pickle.load(f)
 
-    if not isinstance(preprocessor, dict):
-        raise ValueError("Expected preprocessing_tools.pkl to be a dict with 'scaler' and 'encoder'")
+    # Ensure preprocessor supports transform()
+    if not hasattr(preprocessor, "transform"):
+        raise ValueError("Preprocessor object must support .transform()")
 
-    scaler = preprocessor.get("scaler")
-    encoder = preprocessor.get("encoder")
+    return model, preprocessor
 
-    if scaler is None or encoder is None:
-        raise ValueError("Scaler or encoder missing in preprocessing_tools.pkl")
-
-    return model, scaler, encoder
 
 @st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_PATH)
-    return df
+def load_raw_data():
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(f"❌ Data file not found at {DATA_PATH}")
+    return pd.read_csv(DATA_PATH)
 
-# Load everything
-model, scaler, encoder = load_model_and_preprocessor()
-df = load_data()
 
-# ---------------------- FEATURES ----------------------
-categorical_cols = [
-    'gender', 'SeniorCitizen', 'Partner', 'Dependents', 'PhoneService',
-    'MultipleLines', 'InternetService', 'OnlineSecurity', 'OnlineBackup',
-    'DeviceProtection', 'TechSupport', 'StreamingTV', 'StreamingMovies',
-    'Contract', 'PaperlessBilling', 'PaymentMethod'
-]
+# ---------------- APP ----------------
+def main():
+    st.set_page_config(page_title="Churn Prediction", layout="wide", page_icon="📊")
 
-numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+    # ---- Header ----
+    header_cols = st.columns([1, 3, 1])
+    with header_cols[1]:
+        st.markdown(
+            f"<h1 style='text-align:center;color:{PRIMARY_COLOR};margin:0'>{APP_TITLE}</h1>",
+            unsafe_allow_html=True,
+        )
 
-# ---------------------- APP LAYOUT ----------------------
-st.markdown("<h1 style='text-align:center;color:#1f77b4'>Telco Customer Churn Prediction</h1>", unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("Filter a customer from the dataset and predict churn.")
+    st.markdown("---")
 
-# ---------------------- FILTERS ----------------------
-st.subheader("Filter Customer")
-filtered_df = df.copy()
+    # Load artifacts
+    try:
+        model, preprocessor = load_model_and_preprocessor()
+        raw_data = load_raw_data()
+    except Exception as e:
+        st.error(f"Failed to load files: {e}")
+        st.stop()
 
-for col in categorical_cols + numeric_cols:
-    if col in categorical_cols:
-        unique_vals = filtered_df[col].unique().tolist()
-        selected = st.selectbox(f"Filter {col}", ["All"] + unique_vals, key=col)
-        if selected != "All":
-            filtered_df = filtered_df[filtered_df[col] == selected]
-    else:
-        min_val = float(filtered_df[col].min())
-        max_val = float(filtered_df[col].max())
-        val_range = st.slider(f"{col} range", min_val, max_val, (min_val, max_val))
-        filtered_df = filtered_df[(filtered_df[col] >= val_range[0]) & (filtered_df[col] <= val_range[1])]
+    # ---- Sidebar ----
+    with st.sidebar:
+        st.header("ℹ️ About")
+        st.write("This app predicts whether a telecom customer is likely to churn.")
+        st.warning("⚠️ Note: This is a demo ML app, not a business recommendation.")
 
-st.markdown(f"Filtered **{len(filtered_df)}** customers")
-st.dataframe(filtered_df.reset_index(drop=True))
+    # ---- Input Section ----
+    st.subheader("📋 Enter Customer Details")
 
-# ---------------------- SELECT ROW FOR PREDICTION ----------------------
-st.subheader("Select a customer row for prediction")
-if not filtered_df.empty:
-    selected_index = st.number_input("Row index", min_value=0, max_value=len(filtered_df)-1, value=0, step=1)
-    input_row = filtered_df.iloc[[selected_index]]
-    st.markdown("Selected customer data:")
-    st.table(input_row)
+    input_data = {}
+    cols = st.columns(3)
+    all_inputs = {}
 
-    # ---------------------- PREDICTION ----------------------
-    if st.button("Predict Churn for Selected Customer"):
-        try:
-            # Numeric features
-            num_data = input_row[numeric_cols].values
-            scaled_num = scaler.transform(num_data)
-
-            # Categorical features
-            cat_data = input_row[categorical_cols].values
-            encoded_cat = encoder.transform(cat_data)
-
-            # Combine
-            processed_input = np.hstack([scaled_num, encoded_cat])
-
-            # Predict
-            prediction = model.predict(processed_input)[0]
-            probability = model.predict_proba(processed_input)[0][1]
-
-            st.markdown("---")
-            st.subheader("Prediction Result")
-            if prediction == 1:
-                st.error(f"⚠️ Customer is likely to **CHURN** with probability {probability:.2f}")
+    for i, col in enumerate(raw_data.columns):
+        with cols[i % 3]:
+            if raw_data[col].dtype == "object":
+                val = st.selectbox(col, options=sorted(raw_data[col].dropna().unique()))
             else:
-                st.success(f"✅ Customer is **NOT likely to churn** with probability {1-probability:.2f}")
+                val = st.number_input(
+                    col,
+                    value=float(raw_data[col].dropna().median()),
+                    step=1.0,
+                )
+            all_inputs[col] = val
+
+    # ---- Predict Button ----
+    if st.button("🔮 Predict Churn", use_container_width=True):
+        try:
+            # Convert to DataFrame
+            input_df = pd.DataFrame([all_inputs])
+
+            # Apply preprocessing (scaling + encoding)
+            processed = preprocessor.transform(input_df)
+
+            # Prediction
+            pred = model.predict(processed)[0]
+            prob = None
+            if hasattr(model, "predict_proba"):
+                prob = model.predict_proba(processed)[0][1]
+
+            # ---- Result ----
+            st.markdown("### ✅ Prediction Result")
+            if pred == 1:
+                st.error("🚨 This customer is **likely to churn**.")
+            else:
+                st.success("💚 This customer is **not likely to churn**.")
+
+            if prob is not None:
+                st.info(f"Churn Probability: **{prob:.2%}**")
 
         except Exception as e:
             st.error(f"Prediction failed: {e}")
-else:
-    st.warning("No customers match the filter criteria.")
 
+
+if __name__ == "__main__":
+    main()
