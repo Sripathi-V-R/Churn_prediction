@@ -6,7 +6,7 @@ from pathlib import Path
 
 # ---------------- CONFIG ----------------
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model(1).pkl"
+MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"   # <-- exact name
 PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
 DATA_PATH = BASE_DIR / "TelcoChurn_Preprocessed.csv"
 
@@ -26,7 +26,7 @@ def load_model_and_preprocessor():
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
 
-    # Load preprocessing tools (should be dict with scaler + encoder or a pipeline)
+    # Load preprocessing tools
     with open(PREPROCESSOR_PATH, "rb") as f:
         preprocessor = pickle.load(f)
 
@@ -97,7 +97,7 @@ def main():
             # Convert to DataFrame
             input_df = pd.DataFrame([all_inputs])
 
-            # Apply preprocessing (scaling + encoding)
+            # Apply preprocessing
             processed = preprocessor.transform(input_df)
 
             # Prediction
