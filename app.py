@@ -1,127 +1,78 @@
 import streamlit as st
+import joblib
 import pandas as pd
-import numpy as np
-import pickle
-from pathlib import Path
 
-# ---------------------- CONFIG ----------------------
-BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"
-PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
-
-st.set_page_config(page_title="Telco Churn Prediction", layout="wide")
-
-# ---------------------- LOAD ARTIFACTS ----------------------
+# -------------------
+# Load model + preprocessor safely
+# -------------------
 @st.cache_resource
 def load_model_and_preprocessor():
-    # Load CatBoost model
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
+    model = joblib.load("model.pkl")
+    preprocessor = joblib.load("preprocessor.pkl")
 
-    # Load preprocessing pipeline/transformer
-    with open(PREPROCESSOR_PATH, "rb") as f:
-        preprocessor = pickle.load(f)
-
+    # Check if preprocessor has .transform() method
     if not hasattr(preprocessor, "transform"):
-        raise ValueError("Preprocessing object must support .transform()")
+        # If it's a dict, raise a clear error
+        raise ValueError(
+            f"Preprocessor is of type {type(preprocessor)}. "
+            "It must be a scikit-learn transformer or Pipeline with .transform()."
+        )
 
     return model, preprocessor
 
-model, preprocessor = load_model_and_preprocessor()
 
-# ---------------------- FEATURES ----------------------
-categorical_cols = [
-    'gender', 'SeniorCitizen', 'Partner', 'Dependents', 'PhoneService',
-    'MultipleLines', 'InternetService', 'OnlineSecurity', 'OnlineBackup',
-    'DeviceProtection', 'TechSupport', 'StreamingTV', 'StreamingMovies',
-    'Contract', 'PaperlessBilling', 'PaymentMethod'
-]
+# -------------------
+# Main app
+# -------------------
+st.set_page_config(page_title="Churn Prediction", page_icon="📊", layout="centered")
 
-numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+st.title("📊 Customer Churn Prediction")
+st.write("Enter customer details below to predict whether they are likely to churn.")
 
-# ---------------------- APP LAYOUT ----------------------
-st.markdown("<h1 style='text-align:center;color:#1f77b4'>Telco Customer Churn Prediction</h1>", unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("Fill in the details of the customer below to predict churn probability.")
+# Load model and preprocessor
+try:
+    model, preprocessor = load_model_and_preprocessor()
+except Exception as e:
+    st.error(f"❌ Failed to load model/preprocessor: {e}")
+    st.stop()
 
-# ---- Input Form ----
-with st.form("customer_form"):
-    st.subheader("Customer Details")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        gender = st.selectbox("Gender", ['Female', 'Male'])
-        SeniorCitizen = st.selectbox("Senior Citizen", ['No', 'Yes'])
-        Partner = st.selectbox("Partner", ['Yes', 'No'])
-        Dependents = st.selectbox("Dependents", ['No', 'Yes'])
-        PhoneService = st.selectbox("Phone Service", ['No', 'Yes'])
-        MultipleLines = st.selectbox("Multiple Lines", ['No phone service', 'No', 'Yes'])
-        InternetService = st.selectbox("Internet Service", ['DSL', 'Fiber optic', 'No'])
-        OnlineSecurity = st.selectbox("Online Security", ['No', 'Yes', 'No internet service'])
-
-    with col2:
-        OnlineBackup = st.selectbox("Online Backup", ['Yes', 'No', 'No internet service'])
-        DeviceProtection = st.selectbox("Device Protection", ['No', 'Yes', 'No internet service'])
-        TechSupport = st.selectbox("Tech Support", ['No', 'Yes', 'No internet service'])
-        StreamingTV = st.selectbox("Streaming TV", ['No', 'Yes', 'No internet service'])
-        StreamingMovies = st.selectbox("Streaming Movies", ['No', 'Yes', 'No internet service'])
-        Contract = st.selectbox("Contract", ['Month-to-month', 'One year', 'Two year'])
-        PaperlessBilling = st.selectbox("Paperless Billing", ['Yes', 'No'])
-        PaymentMethod = st.selectbox(
-            "Payment Method", 
-            ['Electronic check', 'Mailed check', 'Bank transfer (automatic)', 'Credit card (automatic)']
-        )
-
-    tenure = st.number_input("Tenure (months)", min_value=0, max_value=100, value=12)
-    MonthlyCharges = st.number_input("Monthly Charges", min_value=0.0, max_value=1000.0, value=70.0)
-    TotalCharges = st.number_input("Total Charges", min_value=0.0, max_value=20000.0, value=800.0)
+# -------------------
+# Input fields
+# -------------------
+with st.form("input_form"):
+    age = st.number_input("Age", min_value=18, max_value=100, value=30)
+    gender = st.selectbox("Gender", ["Male", "Female"])
+    tenure = st.number_input("Tenure (months)", min_value=0, max_value=120, value=12)
+    monthly_charges = st.number_input("Monthly Charges", min_value=0.0, value=50.0)
+    total_charges = st.number_input("Total Charges", min_value=0.0, value=600.0)
 
     submitted = st.form_submit_button("Predict Churn")
 
-# ---- Prediction ----
+# -------------------
+# Prediction
+# -------------------
 if submitted:
-    input_dict = {
-        'gender': gender,
-        'SeniorCitizen': SeniorCitizen,
-        'Partner': Partner,
-        'Dependents': Dependents,
-        'PhoneService': PhoneService,
-        'MultipleLines': MultipleLines,
-        'InternetService': InternetService,
-        'OnlineSecurity': OnlineSecurity,
-        'OnlineBackup': OnlineBackup,
-        'DeviceProtection': DeviceProtection,
-        'TechSupport': TechSupport,
-        'StreamingTV': StreamingTV,
-        'StreamingMovies': StreamingMovies,
-        'Contract': Contract,
-        'PaperlessBilling': PaperlessBilling,
-        'PaymentMethod': PaymentMethod,
-        'tenure': tenure,
-        'MonthlyCharges': MonthlyCharges,
-        'TotalCharges': TotalCharges
-    }
-
-    input_df = pd.DataFrame([input_dict])
-
     try:
-        # Transform using the pipeline / ColumnTransformer
-        processed_input = preprocessor.transform(input_df)
+        # Put inputs in DataFrame
+        input_df = pd.DataFrame([{
+            "age": age,
+            "gender": gender,
+            "tenure": tenure,
+            "monthly_charges": monthly_charges,
+            "total_charges": total_charges
+        }])
+
+        # Preprocess input
+        X_processed = preprocessor.transform(input_df)
 
         # Predict
-        prediction = model.predict(processed_input)[0]
-        probability = model.predict_proba(processed_input)[0][1]
+        prediction = model.predict(X_processed)[0]
+        proba = model.predict_proba(X_processed)[0][1]
 
-        # Display results
-        st.markdown("---")
-        st.subheader("Prediction Result")
         if prediction == 1:
-            st.error(f"⚠️ Customer is likely to **CHURN** with probability {probability:.2f}")
+            st.error(f"⚠️ Customer is likely to churn. Probability: {proba:.2f}")
         else:
-            st.success(f"✅ Customer is **NOT likely to churn** with probability {1-probability:.2f}")
-
-        st.markdown("**Submitted Data:**")
-        st.table(input_df)
+            st.success(f"✅ Customer is not likely to churn. Probability: {proba:.2f}")
 
     except Exception as e:
-        st.error(f"Prediction failed: {e}")
+        st.error(f"❌ Prediction failed: {e}")
