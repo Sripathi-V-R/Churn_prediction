@@ -6,7 +6,7 @@ from pathlib import Path
 
 # ---------------- CONFIG ----------------
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"   # <-- exact name
+MODEL_PATH = BASE_DIR / "catboost_best_model (1).pkl"   # exact file name with (1)
 PREPROCESSOR_PATH = BASE_DIR / "preprocessing_tools.pkl"
 DATA_PATH = BASE_DIR / "TelcoChurn_Preprocessed.csv"
 
@@ -16,21 +16,21 @@ PRIMARY_COLOR = "#2E86C1"
 # ---------------- LOAD ARTIFACTS ----------------
 @st.cache_resource
 def load_model_and_preprocessor():
-    # Check files exist
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"❌ Model file not found at {MODEL_PATH}")
-    if not PREPROCESSOR_PATH.exists():
-        raise FileNotFoundError(f"❌ Preprocessor file not found at {PREPROCESSOR_PATH}")
+    """Load CatBoost model and preprocessing pipeline."""
+    # ---- Load Model ----
+    try:
+        with open(MODEL_PATH, "rb") as f:
+            model = pickle.load(f)
+    except Exception as e:
+        raise RuntimeError(f"❌ Failed to load model at {MODEL_PATH}. Error: {e}")
 
-    # Load model
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
+    # ---- Load Preprocessor ----
+    try:
+        with open(PREPROCESSOR_PATH, "rb") as f:
+            preprocessor = pickle.load(f)
+    except Exception as e:
+        raise RuntimeError(f"❌ Failed to load preprocessor at {PREPROCESSOR_PATH}. Error: {e}")
 
-    # Load preprocessing tools
-    with open(PREPROCESSOR_PATH, "rb") as f:
-        preprocessor = pickle.load(f)
-
-    # Ensure preprocessor supports transform()
     if not hasattr(preprocessor, "transform"):
         raise ValueError("Preprocessor object must support .transform()")
 
@@ -39,9 +39,11 @@ def load_model_and_preprocessor():
 
 @st.cache_data
 def load_raw_data():
-    if not DATA_PATH.exists():
-        raise FileNotFoundError(f"❌ Data file not found at {DATA_PATH}")
-    return pd.read_csv(DATA_PATH)
+    """Load dataset before encoding and scaling."""
+    try:
+        return pd.read_csv(DATA_PATH)
+    except Exception as e:
+        raise RuntimeError(f"❌ Failed to load dataset at {DATA_PATH}. Error: {e}")
 
 
 # ---------------- APP ----------------
@@ -55,10 +57,9 @@ def main():
             f"<h1 style='text-align:center;color:{PRIMARY_COLOR};margin:0'>{APP_TITLE}</h1>",
             unsafe_allow_html=True,
         )
-
     st.markdown("---")
 
-    # Load artifacts
+    # ---- Load artifacts ----
     try:
         model, preprocessor = load_model_and_preprocessor()
         raw_data = load_raw_data()
@@ -70,14 +71,13 @@ def main():
     with st.sidebar:
         st.header("ℹ️ About")
         st.write("This app predicts whether a telecom customer is likely to churn.")
-        st.warning("⚠️ Note: This is a demo ML app, not a business recommendation.")
+        st.warning("⚠️ Demo app — not for business decisions.")
 
     # ---- Input Section ----
     st.subheader("📋 Enter Customer Details")
 
     input_data = {}
     cols = st.columns(3)
-    all_inputs = {}
 
     for i, col in enumerate(raw_data.columns):
         with cols[i % 3]:
@@ -89,13 +89,13 @@ def main():
                     value=float(raw_data[col].dropna().median()),
                     step=1.0,
                 )
-            all_inputs[col] = val
+            input_data[col] = val
 
     # ---- Predict Button ----
     if st.button("🔮 Predict Churn", use_container_width=True):
         try:
             # Convert to DataFrame
-            input_df = pd.DataFrame([all_inputs])
+            input_df = pd.DataFrame([input_data])
 
             # Apply preprocessing
             processed = preprocessor.transform(input_df)
